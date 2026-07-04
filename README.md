@@ -110,8 +110,8 @@ _Coming soon - Extension will be available on Chrome Web Store_
 
 2. **Ollama Configuration:**
    - Install Ollama locally
-   - Set up HTTPS proxy (see [local-https-proxy-ollama](https://github.com/ChenYCL/local-https-proxy-ollama))
-   - Configure local endpoint
+   - Start with CORS: `OLLAMA_ORIGINS="chrome-extension://*" ollama serve`
+   - Default endpoint `http://localhost:11434/v1` works out of the box (no proxy)
 
 ### Step 3: Add Website Configuration
 
@@ -164,40 +164,119 @@ _Coming soon - Extension will be available on Chrome Web Store_
 - **429 Error**: Rate limit exceeded, check quota
 - **404 Error**: Verify model name and endpoint URL
 
-### 🏠 Ollama Local Setup
+### 🏠 Ollama Local Setup (No Server Needed!)
+
+> **No separate proxy required.** MV3 service workers can connect directly to `http://localhost:11434` thanks to Chrome's localhost exception for extensions.
 
 #### Prerequisites
 
 - Local Ollama installation
-- HTTPS proxy for Chrome extension compatibility
 - Sufficient system resources (4GB+ RAM recommended)
 
 #### Quick Setup
 
 ```bash
 # 1. Install Ollama
-# Visit https://ollama.ai for installation instructions
+# Visit https://ollama.com for installation instructions
+```
 
-# 2. Download recommended model
-ollama pull qwen2:0.5b  # Lightweight, good for translation
+**2. Start Ollama with CORS allowed for this extension** (pick your platform):
 
-# 3. Set up HTTPS proxy
-git clone https://github.com/ChenYCL/local-https-proxy-ollama.git
-cd local-https-proxy-ollama
-./setup.sh  # macOS/Linux or setup.bat for Windows
+##### macOS / Linux (bash, zsh)
 
-# 4. Start proxy server
-npm start
+```bash
+# One-time per terminal session:
+OLLAMA_ORIGINS="chrome-extension://*" ollama serve
+
+# Permanent: add to ~/.zshrc or ~/.bashrc:
+export OLLAMA_ORIGINS="chrome-extension://*"
+# then:  ollama serve &
+```
+
+##### Windows PowerShell
+
+> ⚠️ PowerShell does **NOT** accept bash inline env-var syntax (`OLLAMA_ORIGINS=...`).
+> Using it gives: `CommandNotFoundException` and Ollama silently starts without CORS.
+
+```powershell
+# One-time per PowerShell session:
+$env:OLLAMA_ORIGINS = "chrome-extension://*"
+ollama serve
+
+# Permanent (user-level, recommended):
+[System.Environment]::SetEnvironmentVariable(
+  "OLLAMA_ORIGINS",
+  "chrome-extension://*",
+  [System.EnvironmentVariableTarget]::User
+)
+# Close & reopen PowerShell, then:
+ollama serve
+```
+
+##### Windows CMD
+
+```cmd
+REM One-time per CMD session:
+set OLLAMA_ORIGINS=chrome-extension://*
+ollama serve
+
+REM Permanent:
+setx OLLAMA_ORIGINS "chrome-extension://*"
+REM Open a new CMD window, then:
+ollama serve
+```
+
+##### Windows: Ollama runs as a Service (default installer)
+
+The Windows installer registers Ollama as a service. To set the env var:
+
+```powershell
+# Stop the service
+Stop-Service ollama
+
+# Set system-wide env var (admin PowerShell required)
+[System.Environment]::SetEnvironmentVariable(
+  "OLLAMA_ORIGINS",
+  "chrome-extension://*",
+  [System.EnvironmentVariableTarget]::Machine
+)
+
+# Start again
+Start-Service ollama
+```
+
+##### Verify CORS is working
+
+```bash
+# Should return JSON: {"version":"0.x.x"}
+curl http://localhost:11434/api/version
+```
+
+```bash
+# 3. Pull a model (in a separate terminal)
+ollama pull qwen2:0.5b     # Lightweight, ~500 MB
+# or
+ollama pull llama3.2:3b     # Better quality, ~2 GB
 ```
 
 #### Extension Configuration
 
-1. Select **Ollama** model
-2. Set Base URL: `https://localhost:11435/v1`
-3. Set Model Name: `qwen2:0.5b`
-4. API Key: `ollama` (any value works)
+1. Open the extension **Options** page
+2. Provider → **Ollama (Local)**
+3. Base URL → `http://localhost:11434/v1` (default)
+4. Model Name → `qwen2:0.5b` (or your pulled model)
+5. API Key → `ollama` (any value works; ignored by Ollama)
+6. **Target Language** → e.g. `English`, `Turkish`, `Chinese`
 
-For detailed setup instructions, see: [local-https-proxy-ollama](https://github.com/ChenYCL/local-https-proxy-ollama)
+#### Troubleshooting
+
+- **"CORS blocked"**: Ollama was started without `OLLAMA_ORIGINS`. Restart it with the env var (see platform-specific commands above).
+- **"Unreachable"**: Ollama is not running. Run `ollama serve` in a terminal.
+- **"Model not found"**: You haven't pulled the model yet. Run `ollama pull <model>`.
+- **`CommandNotFoundException` (Windows PowerShell)**: You used bash inline syntax (`OLLAMA_ORIGINS="..."`). PowerShell requires `$env:OLLAMA_ORIGINS = "..."` instead. See the Windows PowerShell block above.
+- **Service didn't pick up the env var (Windows)**: Ollama runs as a service by default. Use the **"Windows: Ollama runs as a Service"** block above to set the env var at the Machine level and restart the service.
+- **Verify CORS works**: Run `curl http://localhost:11434/api/version` in a terminal. A JSON response with the version confirms Ollama is reachable.
+- **Diagnostic tool**: The **Connection Diagnostics** card at the top of Options runs live tests and shows the exact failure with a hint.
 
 ## 🌐 Custom Website Configuration
 

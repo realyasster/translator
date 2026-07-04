@@ -17,6 +17,21 @@ const DEFAULT_SETTINGS = {
       domain: 'https://www.netflix.com',
       selector: '.player-timedtext-text-container',
     },
+    {
+      domain: 'https://www.udemy.com',
+      selector: '[data-purpose="captions-cue"]',
+      selectors: [
+        '[data-purpose="captions-cue"]',
+        '[data-purpose="captions-cue-text"]',
+        '[class*="cue-text"]',
+        '.transcript--cue-text--3osqK',
+        'div[class*="captions"] span',
+      ],
+    },
+    {
+      domain: 'https://www.youtube.com',
+      selector: '.ytp-caption-segment',
+    },
     { domain: '', selector: '' },
   ],
   prompt:
@@ -35,7 +50,7 @@ const DEFAULT_SETTINGS = {
   },
   ollamaConfig: {
     apiKey: 'ollama',
-    baseURL: 'https://localhost:11435/v1',
+    baseURL: 'http://localhost:11434/v1',
     modelName: 'qwen2:0.5b',
   },
 }
@@ -161,6 +176,8 @@ const isConfigValid = (
         providerConfig.baseURL.trim() !== '' &&
         providerConfig.modelName.trim() !== ''
       )
+    } else if (provider === 'google-translate') {
+      return !!providerConfig?.baseURL && providerConfig.baseURL.trim() !== ''
     }
   }
 

@@ -1,4 +1,4 @@
-import debounce from 'lodash/debounce'
+import throttle from 'lodash/throttle'
 
 interface StorageData {
   status: boolean
@@ -26,6 +26,39 @@ interface StorageData {
 interface DomConfig {
   domain: string
   selector: string
+  selectors?: string[]
+}
+
+const UI_NOISE_PATTERNS: RegExp[] = [
+  /\b\d+\s*more\b/i,
+  /\bauto\b/i,
+  /\bsubtitles?\b/i,
+  /\bcaptions?\b/i,
+  /\blanguages?\b/i,
+  /\|\s*$/,
+  /^\s*\|/,
+  /\|\s*\|/,
+  /^[a-z]{2}\s*\[/i,
+  /\]\s*$/,
+]
+
+const UI_LANGUAGE_NAMES = new Set([
+  'english', 'turkish', 'türkçe', 'chinese', 'spanish', 'french',
+  'german', 'portuguese', 'japanese', 'korean', 'arabic', 'hindi',
+  'russian', 'italian', 'dutch', 'polish', 'auto',
+])
+
+function isLikelyUIText(text: string): boolean {
+  const t = (text || '').trim()
+  if (!t) return true
+  if (t.length < 4) return true
+  for (const re of UI_NOISE_PATTERNS) {
+    if (re.test(t)) return true
+  }
+  const lower = t.toLowerCase()
+  if (UI_LANGUAGE_NAMES.has(lower)) return true
+  if (UI_LANGUAGE_NAMES.has(lower.replace(/\[.*?\]/g, '').trim())) return true
+  return false
 }
 
 const CONFIG = {
@@ -51,6 +84,13 @@ class TranslationManager {
   private translationCache: Map<string, string> = new Map()
   private videoWrapper: HTMLElement | null = null
   private subtitleTimeout: number | null = null
+  private translateRetryCount: number = 0
+  private readonly MAX_TRANSLATE_RETRIES = 3
+  private lastErrorKey: string = ''
+  private lastErrorTime: number = 0
+  private readonly ERROR_THROTTLE_MS = 30000
+  private lastRequestTime: number = 0
+  private lastRequestText: string = ''
   // 新增浮动字幕容器相关属性
   private floatingSubtitle: HTMLElement | null = null
   private isDragging: boolean = false
@@ -126,8 +166,27 @@ class TranslationManager {
   }
 
   private isDomainAllowed(domConfigs: DomConfig[]): DomConfig | undefined {
-    const currentDomain = window.location.origin
-    return domConfigs?.find((config) => currentDomain === config.domain)
+    if (!domConfigs) return undefined
+    const currentOrigin = window.location.origin
+    const currentHost = window.location.hostname
+
+    return domConfigs.find((config) => {
+      if (!config?.domain) return false
+      if (currentOrigin === config.domain) return true
+
+      try {
+        const cfgUrl = new URL(config.domain)
+        return (
+          currentHost === cfgUrl.hostname ||
+          currentHost.endsWith('.' + cfgUrl.hostname)
+        )
+      } catch {
+        return (
+          currentHost === config.domain ||
+          currentHost.endsWith('.' + config.domain)
+        )
+      }
+    })
   }
 
   private startTranslation() {
@@ -138,8 +197,9 @@ class TranslationManager {
       .then(({ domConfigs }) => {
         const matchedConfig = this.isDomainAllowed(domConfigs)
         if (matchedConfig) {
-          this.createHideOriginalSubtitleStyle(matchedConfig.selector)
-          this.setupMutationObserver(matchedConfig.selector)
+          const sels = this.getCandidateSelectors(matchedConfig)
+          this.createHideOriginalSubtitleStyle(sels)
+          this.setupMutationObserver(sels)
         }
       })
       .catch((error) => {
@@ -164,7 +224,7 @@ class TranslationManager {
     this.showOriginalSubtitle()
   }
 
-  private checkAndTranslate = debounce(async () => {
+  private checkAndTranslate = throttle(async () => {
     if (!this.isActive) {
       return
     }
@@ -179,31 +239,61 @@ class TranslationManager {
       const matchedConfig = this.isDomainAllowed(domConfigs)
 
       if (matchedConfig) {
+        const candidateSelectors = this.getCandidateSelectors(matchedConfig)
         console.log(
-          '🔍 Using selector:',
-          JSON.stringify(matchedConfig.selector),
+          '🔍 Trying selectors:',
+          JSON.stringify(candidateSelectors),
         )
 
-        // 验证选择器
-        if (matchedConfig.selector.includes('..')) {
-          console.error(
-            '❌ Selector contains double dots:',
-            matchedConfig.selector,
-          )
+        let rootElements: Element[] = []
+        let usedSelector: string | null = null
+        const candidateResults: { selector: string; elements: Element[]; uiScore: number }[] = []
+        for (const sel of candidateSelectors) {
+          if (!sel || sel.includes('..')) continue
+          try {
+            const found = Array.from(document.querySelectorAll(sel))
+            if (found.length > 0) {
+              const texts = found
+                .map((el) => (el.textContent || '').trim())
+                .filter(Boolean)
+              const uiCount = texts.filter((t) => isLikelyUIText(t)).length
+              const uiRatio = texts.length ? uiCount / texts.length : 1
+              candidateResults.push({ selector: sel, elements: found, uiScore: uiRatio })
+            }
+          } catch (error) {
+            console.warn('⚠️ Invalid selector:', sel, error)
+          }
+        }
+
+        if (candidateResults.length === 0) {
           return
         }
 
-        let rootElements: NodeListOf<Element>
-        try {
-          rootElements = document.querySelectorAll(matchedConfig.selector)
-          console.log('📊 Found elements:', rootElements.length)
-        } catch (error) {
-          console.error(
-            '❌ Invalid selector in checkAndTranslate:',
-            matchedConfig.selector,
-            error,
+        candidateResults.sort((a, b) => {
+          if (a.uiScore !== b.uiScore) return a.uiScore - b.uiScore
+          return b.elements.length - a.elements.length
+        })
+
+        const best = candidateResults[0]
+        rootElements = best.elements
+        usedSelector = best.selector
+        console.log(
+          '📊 Found elements:',
+          rootElements.length,
+          'via',
+          usedSelector,
+          '(uiScore=',
+          best.uiScore,
+          ')',
+        )
+        if (candidateResults.length > 1) {
+          console.log(
+            '   other candidates:',
+            candidateResults
+              .slice(1)
+              .map((c) => `${c.selector} (n=${c.elements.length}, ui=${c.uiScore.toFixed(2)})`)
+              .join(' | '),
           )
-          return
         }
 
         // 获取所有字幕文本并去重
@@ -236,53 +326,70 @@ class TranslationManager {
             )
             this.lastSubtitleContent = currentText
             this.lastSubtitleTimestamp = currentTimestamp
-            this.translateText(currentText, matchedConfig.selector)
+            // Anti-spam: aynı text tekrar fire etmesin (3s throttle)
+            const now = Date.now()
+            if (
+              now - this.lastRequestTime > 3000 ||
+              this.lastRequestText !== currentText
+            ) {
+              this.lastRequestTime = now
+              this.lastRequestText = currentText
+              this.translateText(currentText, matchedConfig.selector)
+            }
           }
         }
       }
     } catch (error) {
       console.error('Error in checkAndTranslate:', error)
     }
-  }, 100) // 减少防抖延迟到100ms
+  }, 100, { leading: true, trailing: true })
 
-  private setupMutationObserver(selector: string) {
+  private setupMutationObserver(selectors: string[]) {
+    const valid = (selectors || []).filter(
+      (s) => s && typeof s === 'string' && !s.includes('..'),
+    )
+    if (valid.length === 0) {
+      console.error('❌ No valid selectors for MutationObserver')
+      return
+    }
     // 清理现有的观察器
     if (this.mutationObserver) {
       this.mutationObserver.disconnect()
     }
 
-    // 创建新的观察器
     this.mutationObserver = new MutationObserver((mutations) => {
       let hasSubtitleChange = false
 
       mutations.forEach((mutation) => {
-        // 检查是否有字幕相关的变化
         if (
           mutation.type === 'childList' ||
           mutation.type === 'characterData'
         ) {
           const target = mutation.target as Element
 
-          // 检查变化的节点是否与字幕选择器匹配
-          if (target.matches && target.matches(selector)) {
-            hasSubtitleChange = true
-          }
-
-          // 检查子节点是否包含字幕元素
-          if (target.querySelector && target.querySelector(selector)) {
-            hasSubtitleChange = true
+          for (const sel of valid) {
+            try {
+              if (target.matches && target.matches(sel)) {
+                hasSubtitleChange = true
+                break
+              }
+              if (target.querySelector && target.querySelector(sel)) {
+                hasSubtitleChange = true
+                break
+              }
+            } catch {
+              // ignore invalid selector
+            }
           }
         }
       })
 
-      // 如果检测到字幕变化，立即触发检查
       if (hasSubtitleChange) {
         console.log('🔄 MutationObserver detected subtitle change')
         this.checkAndTranslate()
       }
     })
 
-    // 开始观察整个文档的变化
     this.mutationObserver.observe(document.body, {
       childList: true,
       subtree: true,
@@ -290,7 +397,7 @@ class TranslationManager {
       characterDataOldValue: false,
     })
 
-    console.log('👁️ MutationObserver setup for selector:', selector)
+    console.log('👁️ MutationObserver setup for selectors:', valid)
   }
 
   private async translateText(text: string, selector: string) {
@@ -304,13 +411,19 @@ class TranslationManager {
     }
 
     try {
-      // 使用 Promise 包装 sendMessage 以更好地处理错误
+      const storage = await this.getStorageData()
+      const targetLanguage =
+        (storage as any).providerConfig?.targetLanguage ||
+        (storage as any).openaiConfig?.targetLanguage ||
+        (storage as any).ollamaConfig?.targetLanguage ||
+        'English'
+
       const sendMessagePromise = new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(
           {
             type: 'TRANSLATE_TEXT',
             text: text,
-            targetLanguage: 'Chinese',
+            targetLanguage,
           },
           (response) => {
             if (chrome.runtime.lastError) {
@@ -332,49 +445,205 @@ class TranslationManager {
           .trim()
 
         this.translationCache.set(text, translatedText)
+        this.translateRetryCount = 0
         this.updateSubtitle(text, translatedText)
       } else if (response && response.type === 'TRANSLATION_ERROR') {
-        console.error('Translation failed:', response.error)
+        const rawError = response.error || 'Unknown translation error'
+        console.error('Translation failed:', rawError)
+        const errorKey = `${text.slice(0, 60)}::${rawError.slice(0, 100)}`
+        const now = Date.now()
+        if (
+          this.lastErrorKey === errorKey &&
+          now - this.lastErrorTime < this.ERROR_THROTTLE_MS
+        ) {
+          return
+        }
+        this.lastErrorKey = errorKey
+        this.lastErrorTime = now
+
+        const userMessage = this.friendlyErrorMessage(rawError)
+        this.showTranslationError(text, userMessage)
       }
     } catch (error) {
+      const msg = (error as any)?.message ?? String(error)
+      const errorKey = `${text.slice(0, 60)}::${msg.slice(0, 100)}`
+      const now = Date.now()
+
+      // Anti-spam: aynı hata 30s içinde 1 kez loglanır/gösterilir
+      if (
+        this.lastErrorKey === errorKey &&
+        now - this.lastErrorTime < 30000
+      ) {
+        return
+      }
+      this.lastErrorKey = errorKey
+      this.lastErrorTime = now
+
       console.error('Error sending translation request:', error)
       // 如果是连接错误或扩展上下文失效，可能是 background script 未加载或插件重新加载
-      if (
-        error &&
-        ((error as any).message?.includes('Could not establish connection') ||
-          (error as any).message?.includes('Extension context invalidated'))
-      ) {
+      const retryable =
+        msg.includes('Could not establish connection') ||
+        msg.includes('Extension context invalidated')
+
+      if (retryable && this.translateRetryCount < this.MAX_TRANSLATE_RETRIES && this.isActive) {
+        this.translateRetryCount++
         console.log(
-          'Background script may not be loaded yet or extension reloaded, retrying in 2 seconds...',
+          `Background script may not be loaded yet or extension reloaded, retrying (${this.translateRetryCount}/${this.MAX_TRANSLATE_RETRIES}) in 2 seconds...`,
         )
         setTimeout(() => this.translateText(text, selector), 2000)
+      } else if (retryable) {
+        console.warn(
+          `Translation retries exhausted (${this.translateRetryCount}/${this.MAX_TRANSLATE_RETRIES}) or page inactive`,
+        )
+        this.showTranslationError(
+          text,
+          'Background script unreachable. Reload the extension.',
+        )
+      } else {
+        this.showTranslationError(text, msg || 'Unknown error')
       }
     }
   }
 
-  private createHideOriginalSubtitleStyle(selector: string) {
+  private friendlyErrorMessage(raw: string): string {
+    const lower = raw.toLowerCase()
+    if (
+      lower.includes('403') ||
+      lower.includes('forbidden') ||
+      lower.includes('cors')
+    ) {
+      return (
+        '🚫 Ollama rejected the request (CORS). ' +
+        'Restart Ollama with: OLLAMA_ORIGINS="chrome-extension://*" ollama serve'
+      )
+    }
+    if (lower.includes('404') || lower.includes('not found')) {
+      const modelMatch = raw.match(/model ["']?([^"'\s]+)["']?/i)
+      const model = modelMatch?.[1]
+      if (model) {
+        return `🔍 Model "${model}" not found. Run: ollama pull ${model}`
+      }
+      return '🔍 Resource not found. Check Base URL and Model Name.'
+    }
+    if (lower.includes('401') || lower.includes('unauthorized')) {
+      return '🔑 Invalid API key. Check provider credentials.'
+    }
+    if (
+      lower.includes('failed to fetch') ||
+      lower.includes('connection refused') ||
+      lower.includes('network')
+    ) {
+      return '🔌 Cannot reach server. Check if Ollama is running and Base URL is correct.'
+    }
+    if (lower.includes('timeout') || lower.includes('aborted')) {
+      return '⏱ Request timed out. Server may be slow or unreachable.'
+    }
+    return raw
+  }
+
+  private showTranslationError(originalText: string, errorMessage: string) {
+    const storage = this.getStorageData()
+    storage.then((items) => {
+      this.createOrUpdateFloatingError(originalText, errorMessage, items)
+    })
+  }
+
+  private createOrUpdateFloatingError(
+    originalText: string,
+    errorMessage: string,
+    items: StorageData,
+  ) {
+    const existingContainers = document.querySelectorAll(
+      '.udemy-translate-floating-subtitle',
+    )
+    existingContainers.forEach((c) => {
+      if (c !== this.floatingSubtitle) c.remove()
+    })
+
+    if (!this.floatingSubtitle) {
+      const existing = document.getElementById(
+        'udemy-translate-floating-subtitle',
+      ) as HTMLElement | null
+      if (existing) {
+        this.floatingSubtitle = existing
+      } else {
+        this.floatingSubtitle = this.createFloatingSubtitleContainer(items)
+        document.body.appendChild(this.floatingSubtitle)
+      }
+    }
+
+    const container = this.floatingSubtitle
+    container.innerHTML = ''
+    container.style.display = 'flex'
+
+    const title = document.createElement('div')
+    title.style.cssText = `
+      color: #ff4d4f;
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 6px;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    `
+    title.textContent = '⚠️ Translation error'
+
+    const msg = document.createElement('div')
+    const errorFontSize = items.originFontSize || CONFIG.DEFAULT_FONT_SIZE
+    msg.style.cssText = `
+      color: ${items.originFontColor || CONFIG.DEFAULT_ORIGIN_FONT_COLOR};
+      font-weight: ${items.originFontWeight || CONFIG.DEFAULT_FONT_WEIGHT};
+      font-size: ${errorFontSize}px;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+      margin-bottom: 6px;
+      line-height: 1.4;
+      word-break: break-word;
+    `
+    msg.textContent = errorMessage
+
+    const hint = document.createElement('div')
+    hint.style.cssText = `
+      color: ${items.translatedFontColor || CONFIG.DEFAULT_TRANSLATED_FONT_COLOR};
+      font-weight: ${items.translatedFontWeight || CONFIG.DEFAULT_FONT_WEIGHT};
+      font-size: ${(items.translatedFontSize || CONFIG.DEFAULT_FONT_SIZE)}px;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+      margin-top: 6px;
+      line-height: 1.4;
+      opacity: 0.85;
+      word-break: break-word;
+    `
+    hint.textContent = `Original: "${originalText.slice(0, 120)}${originalText.length > 120 ? '...' : ''}"`
+
+    container.appendChild(title)
+    container.appendChild(msg)
+    container.appendChild(hint)
+
+    if (this.subtitleTimeout !== null) {
+      clearTimeout(this.subtitleTimeout)
+    }
+    this.subtitleTimeout = window.setTimeout(() => {
+      if (this.floatingSubtitle) {
+        this.floatingSubtitle.style.display = 'none'
+      }
+      this.subtitleTimeout = null
+    }, 10000)
+  }
+
+  private createHideOriginalSubtitleStyle(selectors: string[]) {
+    const valid = (selectors || []).filter(
+      (s) => s && typeof s === 'string' && !s.includes('..'),
+    )
+    if (valid.length === 0) {
+      console.error('❌ No valid selectors to hide')
+      return
+    }
     console.log(
-      '🔍 Creating hide style for selector:',
-      JSON.stringify(selector),
+      '🔍 Creating hide style for selectors:',
+      JSON.stringify(valid),
     )
 
-    // 验证选择器格式
-    if (!selector || typeof selector !== 'string') {
-      console.error('❌ Invalid selector:', selector)
-      return
-    }
-
-    // 检查是否有双点号问题
-    if (selector.includes('..')) {
-      console.error('❌ Selector contains double dots:', selector)
-      return
-    }
-
     try {
-      // 测试选择器是否有效
-      document.querySelectorAll(selector)
+      for (const s of valid) document.querySelectorAll(s)
     } catch (error) {
-      console.error('❌ Invalid CSS selector:', selector, error)
+      console.error('❌ Invalid CSS selector:', error)
       return
     }
 
@@ -387,13 +656,19 @@ class TranslationManager {
       document.head.appendChild(style)
     }
 
-    style.textContent = `
-      ${selector} {
-        display: none !important;
-      }
-    `
+    const rules = valid
+      .map((s) => `${s} { display: none !important; }`)
+      .join('\n')
+    style.textContent = rules
 
-    console.log('✅ Hide style created successfully for:', selector)
+    console.log('✅ Hide style created successfully')
+  }
+
+  private getCandidateSelectors(config: DomConfig): string[] {
+    const list = [config.selector, ...(config.selectors || [])]
+      .map((s) => (s || '').trim())
+      .filter(Boolean)
+    return Array.from(new Set(list))
   }
 
   private showOriginalSubtitle() {
@@ -853,10 +1128,11 @@ class TranslationManager {
 
 const translationManager = new TranslationManager()
 
-// Start the translation manager when the content script loads
-translationManager.start()
-
-// Also start the translation manager when the DOM content is loaded
-document.addEventListener('DOMContentLoaded', () => {
+// Start once; defer if the DOM is still loading, otherwise run immediately
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => translationManager.start(), {
+    once: true,
+  })
+} else {
   translationManager.start()
-})
+}

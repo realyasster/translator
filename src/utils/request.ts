@@ -29,6 +29,7 @@ interface ModelConfig {
   baseURL: string
   apiKey: string
   modelName: string
+  targetLanguage?: string
 }
 
 interface StorageData {
@@ -40,7 +41,31 @@ interface StorageData {
   openaiConfig?: ModelConfig
 }
 
-type ProviderType = 'openai-compatible' | 'ollama'
+type ProviderType = 'openai-compatible' | 'ollama' | 'google-translate'
+
+const GOOGLE_LANG_CODES: Record<string, string> = {
+  english: 'en',
+  turkish: 'tr',
+  chinese: 'zh-CN',
+  spanish: 'es',
+  french: 'fr',
+  german: 'de',
+  portuguese: 'pt',
+  italian: 'it',
+  russian: 'ru',
+  japanese: 'ja',
+  korean: 'ko',
+  arabic: 'ar',
+  dutch: 'nl',
+  polish: 'pl',
+}
+
+function resolveTargetLanguage(input?: string): string {
+  const v = (input || 'english').trim().toLowerCase()
+  if (GOOGLE_LANG_CODES[v]) return GOOGLE_LANG_CODES[v]
+  if (v.length <= 5 && /^[a-z-]+$/.test(v)) return v
+  return 'en'
+}
 
 // 统一的 OpenAI-compatible API 翻译函数
 const translateWithOpenAICompatible = async (
@@ -173,6 +198,41 @@ const getStorageData = (): Promise<StorageData> => {
   })
 }
 
+const translateWithGoogleTranslate = async (
+  text: string,
+  targetLanguage: string,
+): Promise<string> => {
+  try {
+    const tl = resolveTargetLanguage(targetLanguage)
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(
+      tl,
+    )}&dt=t&q=${encodeURIComponent(text)}`
+
+    console.log(`🌐 Google Translate request → tl=${tl}`)
+
+    const res = await fetch(url, { method: 'GET' })
+    if (!res.ok) {
+      throw new Error(`Google Translate HTTP ${res.status}: ${res.statusText}`)
+    }
+    const data = (await res.json()) as any
+    if (!Array.isArray(data) || !Array.isArray(data[0])) {
+      throw new Error('Google Translate returned unexpected format')
+    }
+    const translated = (data[0] as any[])
+      .map((seg) => (Array.isArray(seg) && seg[0] ? String(seg[0]) : ''))
+      .join('')
+      .trim()
+    if (!translated) {
+      throw new Error('Google Translate returned empty result')
+    }
+    console.log('✅ Google Translate result:', translated.slice(0, 80))
+    return translated
+  } catch (error) {
+    console.error('❌ Google Translate error:', error)
+    throw error
+  }
+}
+
 const translateText = async (
   text: string,
   targetLanguage: string,
@@ -181,15 +241,12 @@ const translateText = async (
   try {
     const storageData = await getStorageData()
 
-    // 获取 provider 和配置（支持新旧格式）
     let provider: ProviderType
     let config: ModelConfig
 
     if (storageData.selectedProvider && storageData.providerConfig) {
-      // 新格式
       let rawProvider = storageData.selectedProvider as string
 
-      // 迁移旧的 provider 类型
       if (rawProvider === 'openai' || rawProvider === 'zhipu') {
         provider = 'openai-compatible'
       } else {
@@ -198,10 +255,8 @@ const translateText = async (
 
       config = storageData.providerConfig
     } else {
-      // 兼容旧格式
       const selectedModel = storageData.selectedModel || 'openai'
 
-      // 迁移旧的 model 类型
       if (selectedModel === 'openai' || selectedModel === 'zhipu') {
         provider = 'openai-compatible'
       } else {
@@ -211,27 +266,31 @@ const translateText = async (
       if (selectedModel === 'ollama' && storageData.ollamaConfig) {
         config = storageData.ollamaConfig
       } else if (storageData.openaiConfig) {
-        // openai 和 zhipu 都使用 openaiConfig
         config = storageData.openaiConfig
       } else {
         throw new Error('No valid configuration found')
       }
     }
 
-    console.log('🔧 使用 Provider:', provider, config)
+    console.log('🔧 Using Provider:', provider, config)
 
-    // 使用统一的翻译函数
-    const result = await translateWithOpenAICompatible(
+    if (provider === 'google-translate') {
+      return await translateWithGoogleTranslate(text, targetLanguage)
+    }
+
+    return await translateWithOpenAICompatible(
       config,
       text,
       prompt,
       provider,
     )
-
-    return result
   } catch (error) {
-    console.error('Error translating text:', error)
-    throw new Error('Translation failed')
+    if (error instanceof Error) {
+      console.error('[Translation] Real error:', error.message)
+      console.error('[Translation] Stack:', error.stack)
+      throw error
+    }
+    throw new Error(`Unknown error: ${String(error)}`)
   }
 }
 

@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { CompactPicker } from 'react-color';
 import Icon128 from '../../utils/images/icon-128.png';
 import './index.scss';
-import { Avatar, Switch, Slider, Divider, List } from 'antd';
+import { Avatar, Switch, Slider, Divider, List, Button, Popconfirm, Tooltip } from 'antd';
 import {
   SettingFilled,
-  RedEnvelopeOutlined,
-  CloseSquareOutlined,
+  ReloadOutlined,
   GithubFilled
 } from '@ant-design/icons';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const colors = [
   'transparent',
@@ -49,7 +49,21 @@ const colors = [
   '#653294',
   '#AB149E',
 ];
+
+const DEFAULTS = {
+  status: false,
+  backgroundColor: '#000000',
+  backgroundOpacity: 1,
+  originFontSize: 22,
+  originFontColor: '#ffffff',
+  originFontWeight: 700,
+  translatedFontSize: 28,
+  translatedFontColor: '#ffffff',
+  translatedFontWeight: 700,
+}
+
 const Popup = () => {
+  const { t } = useTranslation()
   const [status, setStatus] = useState(false)
   const [backgroundColor, setBackgroundColor] = useState('#000000')
   const [backgroundOpacity, setBackgroundOpacity] = useState(1)
@@ -59,11 +73,13 @@ const Popup = () => {
   const [translatedFontSize, setTranslatedFontSize] = useState(28)
   const [translatedFontColor, setTranslatedFontColor] = useState('#ffffff')
   const [translatedFontWeight, setTranslatedFontWeight] = useState(700)
+  const [diagStatus, setDiagStatus] = useState<
+    'connected' | 'cors_blocked' | 'unreachable' | 'auth_error' | 'not_found' | 'timeout' | 'unknown' | null
+  >(null)
 
-  const [promotionStatus, setPromotionStatus] = useState(true);
   useEffect(() => {
     chrome.storage.local.get(null, function (data) {
-      console.log(`popup page `,data)
+      console.log(`popup page `, data)
       setStatus(data?.status)
       setBackgroundColor(data?.backgroundColor)
       setBackgroundOpacity(data?.backgroundOpacity)
@@ -73,222 +89,220 @@ const Popup = () => {
       setTranslatedFontSize(data?.translatedFontSize)
       setTranslatedFontColor(data?.translatedFontColor)
       setTranslatedFontWeight(data?.translatedFontWeight)
+      if (data?.lastDiagnostic?.status) {
+        setDiagStatus(data.lastDiagnostic.status)
+      }
     })
   }, []);
 
-  const Setting = () => {
+  const Setting = useCallback(() => {
     chrome.tabs.query(
-      {
-        active: true,
-        currentWindow: true,
-      },
-      function (tabs) {
+      { active: true, currentWindow: true },
+      function () {
         chrome.runtime.openOptionsPage();
-      }
+      },
     );
-  };
+  }, []);
 
-
-  const promotionPage = () => {
-    setPromotionStatus(!promotionStatus);
-  };
-
-
-
+  const resetAll = useCallback(() => {
+    chrome.storage.local.set({ ...DEFAULTS }, () => {
+      setStatus(DEFAULTS.status)
+      setBackgroundColor(DEFAULTS.backgroundColor)
+      setBackgroundOpacity(DEFAULTS.backgroundOpacity)
+      setOriginFontSize(DEFAULTS.originFontSize)
+      setOriginColor(DEFAULTS.originFontColor)
+      setOriginFontWeight(DEFAULTS.originFontWeight)
+      setTranslatedFontSize(DEFAULTS.translatedFontSize)
+      setTranslatedFontColor(DEFAULTS.translatedFontColor)
+      setTranslatedFontWeight(DEFAULTS.translatedFontWeight)
+    })
+  }, [])
 
   return (
     <div>
       <div className={'header'}>
         <div className={'left'}>
-          <Avatar
-            style={{ verticalAlign: 'middle' }}
-            src={Icon128}
-          />
-          <div className={'brand'}>Udemy Translate</div>
+          <Avatar style={{ verticalAlign: 'middle' }} src={Icon128} />
+          <div className={'brand'}>{t('popup.brand')}</div>
         </div>
         <div className={'right'}>
-          {promotionStatus ? (
-            <RedEnvelopeOutlined
-              title={'特惠推广'}
-              onClick={promotionPage}
-              style={{ fontSize: '24px', marginRight: '10px', color: 'red' }}
-            />
-          ) : (
-            <CloseSquareOutlined
-              title={'关闭'}
-              onClick={promotionPage}
-              style={{ fontSize: '24px', marginRight: '10px', color: 'green' }}
-            />
+          {diagStatus && (
+            <Tooltip title={t('popup.status.tooltip')}>
+              <span
+                onClick={Setting}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  backgroundColor:
+                    diagStatus === 'connected' ? '#f6ffed' :
+                    diagStatus === 'cors_blocked' || diagStatus === 'timeout' ? '#fffbe6' :
+                    '#fff2f0',
+                  color:
+                    diagStatus === 'connected' ? '#52c41a' :
+                    diagStatus === 'cors_blocked' || diagStatus === 'timeout' ? '#faad14' :
+                    '#ff4d4f',
+                  border:
+                    diagStatus === 'connected' ? '1px solid #b7eb8f' :
+                    diagStatus === 'cors_blocked' || diagStatus === 'timeout' ? '1px solid #ffe58f' :
+                    '1px solid #ffccc7',
+                }}
+              >
+                <span style={{ fontSize: '10px' }}>●</span>
+                {diagStatus === 'connected' ? t('popup.status.connected') : t('popup.status.error')}
+              </span>
+            </Tooltip>
           )}
           <SettingFilled
-            title={'设置'}
+            title={t('popup.settings.title')}
             onClick={Setting}
-            style={{ fontSize: '24px' }}
+            style={{ fontSize: '22px', cursor: 'pointer' }}
           />
         </div>
       </div>
       <Divider style={{ padding: 0, margin: 0 }} />
-      {promotionStatus ? (
-        <div>
-          <div className={'content'}>
-            <Switch
-              checkedChildren="开"
-              unCheckedChildren="关"
-              checked={status}
-              onChange={
-                (e: any) => {
-                  setStatus(!status)
-                  chrome.storage.local.set({ 'status': !status })
-                }
-              }
-              style={{ fontSize: '4em' }}
-            />
-          </div>
-          <List>
-            <List.Item className={'flex'}>
-              <span style={{ display: 'inlineBlock' }}>[背景色]</span>
-              <CompactPicker
-                colors={colors}
-                color={backgroundColor}
-                onChangeComplete={(color, event) => {
-                  console.log(color)
-                  setBackgroundColor(color?.hex)
-                  chrome.storage.local.set({ 'backgroundColor': color.hex })
-                }}
-                className={'CompactPicker'}
-              />
-            </List.Item>
-            <List.Item className={'flex'}>
-              <span>[背景透明]</span>
-              <Slider
-                style={{ width: '280px' }}
-                min={0}
-                max={1}
-                step={0.1}
-                onChange={(value:any) => {
-                  setBackgroundOpacity(value)
-                  chrome.storage.local.set({ 'backgroundOpacity': value })
-                }}
-                value={backgroundOpacity}
-              />
-            </List.Item>
-            <List.Item className={'flex'}>
-              <span>[原文大小]</span>
-              <Slider
-                style={{ width: '280px' }}
-                onChange={(value:any) => {
-                  setOriginFontSize(value)
-                  chrome.storage.local.set({ 'originFontSize': value })
-                }}
-                value={originFontSize}
-              />
-            </List.Item>
-            <List.Item className={'flex'}>
-              <span>[原文颜色]</span>
-              <CompactPicker
-                // name="originFontColor"
-                color={originFontColor}
-                onChangeComplete={(color, event) => {
-                  setOriginColor(color.hex)
-                  chrome.storage.local.set({ 'originFontColor': color.hex })
-                }}
-                className={'CompactPicker'}
-              />
-            </List.Item>
-            <List.Item className={'flex'}>
-              <span>[原文粗细]</span>
-              <Slider
-                style={{ width: '280px' }}
-                min={100}
-                max={700}
-                step={100}
-                onChange={(value:any) => {
-                  setOriginFontWeight(value)
-                  chrome.storage.local.set({ 'originFontWeight': value })
-                }}
-                value={originFontWeight}
-              />
-            </List.Item>
-            <List.Item className={'flex'}>
-              <span>[译文大小]</span>
-              <Slider
-                style={{ width: '280px' }}
-                onChange={(value:any) => {
-                  setTranslatedFontSize(value)
-                  chrome.storage.local.set({ 'translatedFontSize': value })
-                }}
-                value={translatedFontSize}
-              />
-            </List.Item>
-            <List.Item className={'flex'}>
-              <span>[译文颜色]</span>
-              <CompactPicker
-                // name="translatedFontColor"
-                onChangeComplete={(color, event) => {
-                  setTranslatedFontColor(color?.hex)
-                  chrome.storage.local.set({ 'translatedFontColor': color?.hex })
-                }}
-                color={translatedFontColor}
-                className={'CompactPicker'}
-              />
-            </List.Item>
-            <List.Item className={'flex'}>
-              <span>[译文粗细]</span>
-              <Slider
-                style={{ width: '280px' }}
-                min={100}
-                max={700}
-                step={100}
-                onChange={(value:any) => {
-                  setTranslatedFontWeight(value)
-                  chrome.storage.local.set({ 'translatedFontWeight': value })
-                }}
-                value={translatedFontWeight}
-              />
-            </List.Item>
-            <List.Item>
-              <a
-                href="https://github.com/ChenYCL/chrome-extension-udemy-translate"
-                target="__blank"
-              >
-                <GithubFilled
-                  style={{
-                    fontSize: '28px',
-                    color: 'black',
-                    marginLeft: '20px',
-                    cursor: 'pointer',
-                  }}
-                />
-                有问题
-              </a>
-            </List.Item>
-          </List>
-        </div>
-      ) : (
-        <div
-          style={{
-            height: 'calc(100vh - 42px)',
-            background: 'radial-gradient(white, rgb(51, 65, 76))',
+
+      <div className={'content'}>
+        <Switch
+          checkedChildren={t('popup.switch.on')}
+          unCheckedChildren={t('popup.switch.off')}
+          checked={status}
+          onChange={(e: any) => {
+            setStatus(!status)
+            chrome.storage.local.set({ status: !status })
           }}
+        />
+        <Popconfirm
+          title={t('popup.reset.confirm')}
+          okText={t('popup.reset.ok')}
+          cancelText={t('popup.reset.cancel')}
+          onConfirm={resetAll}
         >
-          <h1 style={{ textAlign: 'center', color: 'red' }}>专属优惠链接</h1>
-          <ul style={{ listStyle: 'none' }}>
-            <li>
-              <a
-                style={{
-                  color: 'white',
-                  textDecoration: 'underline',
-                  fontSize: '24px',
-                }}
-                href="https://www.naifei.shop/?sid=YqDFNq"
-                target="_blank"
-              >
-                1. 《奈飞小铺》新人专属特权优惠10元+5元(作者专属通道)
-              </a>
-            </li>
-          </ul>
-        </div>
-      )}
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            style={{ marginLeft: '12px' }}
+          >
+            {t('popup.reset.button')}
+          </Button>
+        </Popconfirm>
+      </div>
+
+      <List>
+        <List.Item className={'flex'}>
+          <span className={'label'}>{t('popup.label.bgColor')}</span>
+          <CompactPicker
+            colors={colors}
+            color={backgroundColor}
+            onChangeComplete={(color) => {
+              setBackgroundColor(color?.hex)
+              chrome.storage.local.set({ backgroundColor: color.hex })
+            }}
+            className={'CompactPicker'}
+          />
+        </List.Item>
+        <List.Item className={'flex'}>
+          <span className={'label'}>{t('popup.label.bgOpacity')}</span>
+          <Slider
+            className={'control'}
+            min={0}
+            max={1}
+            step={0.1}
+            onChange={(value: any) => {
+              setBackgroundOpacity(value)
+              chrome.storage.local.set({ backgroundOpacity: value })
+            }}
+            value={backgroundOpacity}
+          />
+        </List.Item>
+        <List.Item className={'flex'}>
+          <span className={'label'}>{t('popup.label.originSize')}</span>
+          <Slider
+            className={'control'}
+            onChange={(value: any) => {
+              setOriginFontSize(value)
+              chrome.storage.local.set({ originFontSize: value })
+            }}
+            value={originFontSize}
+          />
+        </List.Item>
+        <List.Item className={'flex'}>
+          <span className={'label'}>{t('popup.label.originColor')}</span>
+          <CompactPicker
+            color={originFontColor}
+            onChangeComplete={(color) => {
+              setOriginColor(color.hex)
+              chrome.storage.local.set({ originFontColor: color.hex })
+            }}
+            className={'CompactPicker'}
+          />
+        </List.Item>
+        <List.Item className={'flex'}>
+          <span className={'label'}>{t('popup.label.originWeight')}</span>
+          <Slider
+            className={'control'}
+            min={100}
+            max={700}
+            step={100}
+            onChange={(value: any) => {
+              setOriginFontWeight(value)
+              chrome.storage.local.set({ originFontWeight: value })
+            }}
+            value={originFontWeight}
+          />
+        </List.Item>
+        <List.Item className={'flex'}>
+          <span className={'label'}>{t('popup.label.translatedSize')}</span>
+          <Slider
+            className={'control'}
+            onChange={(value: any) => {
+              setTranslatedFontSize(value)
+              chrome.storage.local.set({ translatedFontSize: value })
+            }}
+            value={translatedFontSize}
+          />
+        </List.Item>
+        <List.Item className={'flex'}>
+          <span className={'label'}>{t('popup.label.translatedColor')}</span>
+          <CompactPicker
+            onChangeComplete={(color) => {
+              setTranslatedFontColor(color?.hex)
+              chrome.storage.local.set({ translatedFontColor: color?.hex })
+            }}
+            color={translatedFontColor}
+            className={'CompactPicker'}
+          />
+        </List.Item>
+        <List.Item className={'flex'}>
+          <span className={'label'}>{t('popup.label.translatedWeight')}</span>
+          <Slider
+            className={'control'}
+            min={100}
+            max={700}
+            step={100}
+            onChange={(value: any) => {
+              setTranslatedFontWeight(value)
+              chrome.storage.local.set({ translatedFontWeight: value })
+            }}
+            value={translatedFontWeight}
+          />
+        </List.Item>
+        <List.Item>
+          <a
+            href="https://github.com/ChenYCL/chrome-extension-udemy-translate"
+            target="__blank"
+            className={'github-link'}
+          >
+            <GithubFilled style={{ fontSize: '20px', marginRight: '6px' }} />
+            {t('popup.issues')}
+          </a>
+        </List.Item>
+      </List>
     </div>
   );
 };
