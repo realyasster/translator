@@ -27,17 +27,31 @@
 
 ## 🎬 Demo Videos
 
+> Demos from the original project (hosted in this repo under [`docs/demo/`](docs/demo/)). See [Credits](#-credits) for source attribution.
+
+<table>
+  <tr>
+    <td width="50%"><b>Demo 1 — Subtitle translation in action</b></td>
+    <td width="50%"><b>Demo 2 — Real-time translation demo</b></td>
+  </tr>
+  <tr>
+    <td>
+      <video src="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo1.mp4" controls width="100%" preload="metadata"></video>
+    </td>
+    <td>
+      <video src="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo2.mov" controls width="100%" preload="metadata"></video>
+    </td>
+  </tr>
+</table>
+
 <p align="center">
-  <a href="https://github.com/user-attachments/assets/8089f430-894f-4abc-9c86-544739ab0f57">
-    <img src="https://github.com/user-attachments/assets/8089f430-894f-4abc-9c86-544739ab0f57" alt="Demo 1" width="48%" />
-  </a>
-  <a href="https://github.com/user-attachments/assets/de6300f6-af87-441a-9304-dd58b255a17a">
-    <img src="https://github.com/user-attachments/assets/de6300f6-af87-441a-9304-dd58b255a17a" alt="Demo 2" width="48%" />
-  </a>
+  <img src="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo3.png" alt="Demo screenshot" width="60%" />
 </p>
 
 <p align="center">
-  <em>Demos from the original project — see Credits section below.</em>
+  <a href="https://github.com/realyasster/translator/tree/main/docs/demo">
+    📁 View source files in <code>docs/demo/</code>
+  </a>
 </p>
 
 ---

@@ -2,27 +2,29 @@
 
 # dependencies
 /node_modules
-/.pnp
-.pnp.js
 
-# testing
-/coverage
+# misc
+.DS_Store
+.env.development.local
+.env.local
+.env.production.local
+.env.test.local
+.idea
+.pnp.js
+.vscode
+/.pnp
 
 # production
 /build
 /release
-# misc
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
+# testing
+/coverage
+
+# logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-.idea
-.vscode
-easy-proxy-ollama-https
-local-https-proxy-ollama
+# generated demo thumbnails
+docs/demo/*.jpg
