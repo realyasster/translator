@@ -27,26 +27,26 @@
 
 ## 🎬 Demo Videos
 
-> Demos from the original project (hosted in this repo under [`docs/demo/`](docs/demo/)). See [Credits](#-credits) for source attribution.
+> Demos from the original project (hosted in this repo under [`docs/demo/`](docs/demo/)). See [Credits](#-credits) for source attribution. Click any thumbnail to download / play the video.
 
 <table>
   <tr>
-    <td width="50%"><b>Demo 1 — Subtitle translation in action</b></td>
-    <td width="50%"><b>Demo 2 — Real-time translation demo</b></td>
-  </tr>
-  <tr>
-    <td>
-      <video src="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo1.mp4" controls width="100%" preload="metadata"></video>
+    <td width="50%" align="center">
+      <b>Demo 1 — Subtitle translation in action</b><br>
+      <a href="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo1.mp4">
+        <img src="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo3.png" alt="Demo 1: click to play" width="100%" />
+      </a><br>
+      <sub>▶️ Click to play (MP4, 14 MB)</sub>
     </td>
-    <td>
-      <video src="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo2.mov" controls width="100%" preload="metadata"></video>
+    <td width="50%" align="center">
+      <b>Demo 2 — Real-time translation demo</b><br>
+      <a href="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo2.mov">
+        <img src="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo3.png" alt="Demo 2: click to play" width="100%" />
+      </a><br>
+      <sub>▶️ Click to play (MOV, 78 MB)</sub>
     </td>
   </tr>
 </table>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/realyasster/translator/main/docs/demo/demo3.png" alt="Demo screenshot" width="60%" />
-</p>
 
 <p align="center">
   <a href="https://github.com/realyasster/translator/tree/main/docs/demo">
