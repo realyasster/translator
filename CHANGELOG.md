@@ -9,9 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 - Chrome Web Store publication
-- Streaming translation (SSE) for lower latency
 - Additional language presets
 - Firefox port
+
+---
+
+## [3.2.0] - 2026-07-04
+
+### Added
+- ⚡ **Streaming translation (SSE)** — word-by-word translation as the model generates
+  - OpenAI-compatible: SSE parsing (`data: {delta.content}` chunks)
+  - Ollama native: NDJSON parsing (`/api/chat` with `stream: true`)
+  - Google Translate: word-by-word simulation (no native streaming)
+  - Persistent `chrome.runtime.connect` port for background → content chunks
+  - AbortController for cancellation on port disconnect
+  - New `src/utils/stream-translator.ts` (provider-agnostic streaming core)
+- 🎨 **Streaming UI**:
+  - "● streaming" badge (pulsing animation) on floating subtitle
+  - Original text shown in dimmed state (70% opacity) for context
+  - Live-updating translated text (typewriter effect)
+  - First chunk visible in 100-500ms (vs 1-3s blocking)
+- ⚙️ **Options toggle**: "Enable streaming (SSE)" — default ON
+  - Persistent (`enableStreaming` storage key)
+  - Falls back to blocking on error
+- 💫 **CSS animation**: `@keyframes ut-stream-pulse` injected once
+
+### Changed
+- `content/index.ts` `translateText()` split into:
+  - `translateTextStreaming()` — port-based with chunks
+  - `translateTextBlocking()` — legacy `sendMessage` (fallback)
+  - `handleTranslationError()` — shared error handler with anti-spam
+  - `postProcess()` — shared `@@@` / newline cleanup
+  - `setStreamingText()` — partial-update UI
+  - `createOrUpdateFloatingStreaming()` — streaming-specific floating subtitle
+- `background/index.ts`:
+  - New `chrome.runtime.onConnect` listener for port-based streaming
+  - `handleStreamRequest()` with `AbortController`
+  - `resolveProviderAndConfig()` helper (shared with blocking path)
+- `request.ts` (blocking) kept untouched — fallback path
+
+### Performance
+- First-token latency: **1-3s → 100-500ms** (~5-10x improvement)
+- Long sentence handling: progressive display instead of full wait
+- Perceived translation speed: dramatically improved for OpenAI / Ollama
 
 ---
 

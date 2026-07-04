@@ -27,6 +27,10 @@ type Dict = Record<string, string>
 const en: Dict = {
   'options.apiConfig.title': 'API Configuration',
   'options.apiConfig.tooltip': 'Please keep your API key safe',
+  'options.streaming.title': 'Streaming Translation',
+  'options.streaming.enable': 'Enable streaming (SSE)',
+  'options.streaming.hint': 'Translate word-by-word as the model generates. Lower perceived latency, smoother UX. Falls back to blocking request on error.',
+  'options.streaming.indicator': '● streaming',
   'options.diagnostics.title': 'Connection Diagnostics',
   'options.diagnostics.provider': 'Provider',
   'options.diagnostics.url': 'URL',
@@ -211,6 +215,10 @@ const en: Dict = {
 const tr: Dict = {
   'options.apiConfig.title': 'API Yapılandırması',
   'options.apiConfig.tooltip': 'Lütfen API anahtarınızı güvende tutun',
+  'options.streaming.title': 'Akış Çevirisi (Streaming)',
+  'options.streaming.enable': 'Akış çevirisini etkinleştir (SSE)',
+  'options.streaming.hint': 'Model ürettikçe kelime kelime çevirir. Düşük gecikme, akıcı UX. Hata olursa blocking moda düşer.',
+  'options.streaming.indicator': '● akıyor',
   'options.diagnostics.title': 'Bağlantı Tanılama',
   'options.diagnostics.provider': 'Sağlayıcı',
   'options.diagnostics.url': 'URL',

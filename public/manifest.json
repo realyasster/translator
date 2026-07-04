@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "Universal Subtitle Translator",
     "description": "Real-time subtitle translation for any website. OpenAI, Ollama, Google Translate.",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "background": {
         "service_worker": "background.js",
         "type": "module"

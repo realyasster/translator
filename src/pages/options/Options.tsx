@@ -126,6 +126,11 @@ const Options: React.FC = () => {
     modelName: PROVIDER_PRESETS['openai-compatible'].defaultModel,
   })
   const [testing, setTesting] = useState<boolean>(false)
+  const [enableStreaming, setEnableStreamingState] = useState<boolean>(true)
+  const setEnableStreaming = useCallback((val: boolean) => {
+    setEnableStreamingState(val)
+    setItem('enableStreaming', val).catch(console.error)
+  }, [])
   const [testResult, setTestResult] = useState<{
     success: boolean
     message: string
@@ -141,6 +146,7 @@ const Options: React.FC = () => {
         storedSelectedModel,
         storedOpenaiConfig,
         storedOllamaConfig,
+        storedEnableStreaming,
       ] = await Promise.all([
         getItem('prompt'),
         getItem('domConfigs'),
@@ -149,9 +155,15 @@ const Options: React.FC = () => {
         getItem('selectedModel'),
         getItem('openaiConfig'),
         getItem('ollamaConfig'),
+        getItem('enableStreaming'),
       ])
 
       if (storedPrompt) setPrompt(storedPrompt)
+      if (storedEnableStreaming !== undefined) {
+        setEnableStreaming(storedEnableStreaming)
+      } else {
+        setEnableStreaming(true)
+      }
       if (storedDomConfigs) setDomConfigs(storedDomConfigs)
 
       if (storedSelectedProvider) {
@@ -1015,6 +1027,47 @@ const Options: React.FC = () => {
         <p style={{ marginTop: '12px', fontSize: '12px', color: '#666' }}>
           💡 {t('options.test.hint')}
         </p>
+
+        <div
+          style={{
+            marginTop: '14px',
+            padding: '10px',
+            backgroundColor: '#f0f5ff',
+            border: '1px solid #adc6ff',
+            borderRadius: '4px',
+          }}
+        >
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={enableStreaming}
+              onChange={(e) => setEnableStreaming(e.target.checked)}
+            />
+            <span style={{ fontWeight: 'bold' }}>
+              ⚡ {t('options.streaming.title')}
+            </span>
+            <span style={{ fontSize: '11px', color: '#1677ff' }}>
+              SSE
+            </span>
+          </label>
+          <p
+            style={{
+              fontSize: '12px',
+              color: '#666',
+              marginTop: '6px',
+              marginBottom: 0,
+            }}
+          >
+            {t('options.streaming.hint')}
+          </p>
+        </div>
       </Card>
 
       {selectedProvider === 'ollama' && (

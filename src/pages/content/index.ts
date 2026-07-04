@@ -97,7 +97,22 @@ class TranslationManager {
   private dragOffset: { x: number; y: number } = { x: 0, y: 0 }
   private mutationObserver: MutationObserver | null = null
 
-  constructor() {}
+  constructor() {
+    this.injectStreamCSS()
+  }
+
+  private injectStreamCSS() {
+    if (document.getElementById('ut-stream-style')) return
+    const style = document.createElement('style')
+    style.id = 'ut-stream-style'
+    style.textContent = `
+      @keyframes ut-stream-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.55; }
+      }
+    `
+    document.head.appendChild(style)
+  }
 
   public async start() {
     console.log('TranslationManager starting...')
@@ -410,19 +425,78 @@ class TranslationManager {
       return
     }
 
-    try {
-      const storage = await this.getStorageData()
-      const targetLanguage =
-        (storage as any).providerConfig?.targetLanguage ||
-        (storage as any).openaiConfig?.targetLanguage ||
-        (storage as any).ollamaConfig?.targetLanguage ||
-        'English'
+    const storage = await this.getStorageData()
+    const useStreaming = (storage as any).enableStreaming !== false // default ON
+    const targetLanguage =
+      (storage as any).providerConfig?.targetLanguage ||
+      (storage as any).openaiConfig?.targetLanguage ||
+      (storage as any).ollamaConfig?.targetLanguage ||
+      'English'
 
+    if (useStreaming) {
+      await this.translateTextStreaming(text, targetLanguage)
+    } else {
+      await this.translateTextBlocking(text, targetLanguage)
+    }
+  }
+
+  private async translateTextStreaming(text: string, targetLanguage: string) {
+    let port: chrome.runtime.Port | null = null
+    let aborted = false
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    let firstChunkShown = false
+
+    const onCleanup = () => {
+      if (port) {
+        try {
+          port.disconnect()
+        } catch {
+          // ignore
+        }
+        port = null
+      }
+    }
+
+    try {
+      port = chrome.runtime.connect({ name: 'translate-stream' })
+      port.onDisconnect.addListener(() => {
+        aborted = true
+      })
+      port.onMessage.addListener((msg: any) => {
+        if (aborted) return
+        if (msg.requestId !== requestId) return
+        if (msg.type === 'STREAM_CHUNK') {
+          this.setStreamingText(text, msg.chunk)
+          if (!firstChunkShown) {
+            firstChunkShown = true
+            console.log('⚡ First streaming chunk received')
+          }
+        } else if (msg.type === 'STREAM_DONE') {
+          const finalText = this.postProcess(msg.fullText)
+          this.translationCache.set(text, finalText)
+          this.translateRetryCount = 0
+          this.updateSubtitle(text, finalText)
+          onCleanup()
+        } else if (msg.type === 'STREAM_ERROR') {
+          const rawError = msg.error || 'Unknown error'
+          this.handleTranslationError(text, rawError)
+          onCleanup()
+        }
+      })
+      port.postMessage({ type: 'TRANSLATE_STREAM', text, targetLanguage, requestId })
+    } catch (error) {
+      this.handleTranslationError(text, (error as any)?.message || String(error))
+      onCleanup()
+    }
+  }
+
+  private async translateTextBlocking(text: string, targetLanguage: string) {
+    try {
       const sendMessagePromise = new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(
           {
             type: 'TRANSLATE_TEXT',
-            text: text,
+            text,
             targetLanguage,
           },
           (response) => {
@@ -438,71 +512,132 @@ class TranslationManager {
       const response = (await sendMessagePromise) as any
 
       if (response && response.type === 'TRANSLATED_TEXT') {
-        let translatedText = response.translatedText.split('@@@')[0].trim()
-        translatedText = translatedText
-          .replace(/\n/g, ' ')
-          .replace(/@/g, ' ')
-          .trim()
-
+        const translatedText = this.postProcess(response.translatedText)
         this.translationCache.set(text, translatedText)
         this.translateRetryCount = 0
         this.updateSubtitle(text, translatedText)
       } else if (response && response.type === 'TRANSLATION_ERROR') {
-        const rawError = response.error || 'Unknown translation error'
-        console.error('Translation failed:', rawError)
-        const errorKey = `${text.slice(0, 60)}::${rawError.slice(0, 100)}`
-        const now = Date.now()
-        if (
-          this.lastErrorKey === errorKey &&
-          now - this.lastErrorTime < this.ERROR_THROTTLE_MS
-        ) {
-          return
-        }
-        this.lastErrorKey = errorKey
-        this.lastErrorTime = now
-
-        const userMessage = this.friendlyErrorMessage(rawError)
-        this.showTranslationError(text, userMessage)
+        this.handleTranslationError(text, response.error || 'Unknown translation error')
       }
     } catch (error) {
-      const msg = (error as any)?.message ?? String(error)
-      const errorKey = `${text.slice(0, 60)}::${msg.slice(0, 100)}`
-      const now = Date.now()
+      this.handleTranslationError(
+        text,
+        (error as any)?.message || String(error),
+      )
+    }
+  }
 
-      // Anti-spam: aynı hata 30s içinde 1 kez loglanır/gösterilir
-      if (
-        this.lastErrorKey === errorKey &&
-        now - this.lastErrorTime < 30000
-      ) {
-        return
-      }
-      this.lastErrorKey = errorKey
-      this.lastErrorTime = now
+  private postProcess(raw: string): string {
+    return raw
+      .split('@@@')[0]
+      .trim()
+      .replace(/\n/g, ' ')
+      .replace(/@/g, ' ')
+      .trim()
+  }
 
-      console.error('Error sending translation request:', error)
-      // 如果是连接错误或扩展上下文失效，可能是 background script 未加载或插件重新加载
-      const retryable =
-        msg.includes('Could not establish connection') ||
-        msg.includes('Extension context invalidated')
+  private setStreamingText(originalText: string, partial: string) {
+    const storage = this.getStorageData()
+    storage.then((items) => {
+      this.createOrUpdateFloatingStreaming(originalText, partial, items)
+    })
+  }
 
-      if (retryable && this.translateRetryCount < this.MAX_TRANSLATE_RETRIES && this.isActive) {
-        this.translateRetryCount++
-        console.log(
-          `Background script may not be loaded yet or extension reloaded, retrying (${this.translateRetryCount}/${this.MAX_TRANSLATE_RETRIES}) in 2 seconds...`,
-        )
-        setTimeout(() => this.translateText(text, selector), 2000)
-      } else if (retryable) {
-        console.warn(
-          `Translation retries exhausted (${this.translateRetryCount}/${this.MAX_TRANSLATE_RETRIES}) or page inactive`,
-        )
-        this.showTranslationError(
-          text,
-          'Background script unreachable. Reload the extension.',
-        )
+  private createOrUpdateFloatingStreaming(
+    originalText: string,
+    partial: string,
+    items: StorageData,
+  ) {
+    const existingContainers = document.querySelectorAll(
+      '.udemy-translate-floating-subtitle',
+    )
+    existingContainers.forEach((container) => {
+      if (container !== this.floatingSubtitle) container.remove()
+    })
+
+    if (!this.floatingSubtitle) {
+      const existing = document.getElementById(
+        'udemy-translate-floating-subtitle',
+      ) as HTMLElement | null
+      if (existing) {
+        this.floatingSubtitle = existing
       } else {
-        this.showTranslationError(text, msg || 'Unknown error')
+        this.floatingSubtitle = this.createFloatingSubtitleContainer(items)
+        document.body.appendChild(this.floatingSubtitle)
       }
     }
+
+    const container = this.floatingSubtitle
+    container.innerHTML = ''
+    container.style.display = 'flex'
+
+    const badge = document.createElement('div')
+    badge.style.cssText = `
+      align-self: flex-end;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      background-color: #1677ff;
+      color: white;
+      margin-bottom: 4px;
+      font-weight: bold;
+      animation: ut-stream-pulse 1.2s ease-in-out infinite;
+    `
+    badge.textContent = '● streaming'
+    container.appendChild(badge)
+
+    const originalSubtitle = document.createElement('div')
+    originalSubtitle.className = 'original-subtitle'
+    originalSubtitle.style.cssText = `
+      color: ${items.originFontColor || CONFIG.DEFAULT_ORIGIN_FONT_COLOR};
+      font-weight: ${items.originFontWeight || CONFIG.DEFAULT_FONT_WEIGHT};
+      font-size: ${Number(items.originFontSize || CONFIG.DEFAULT_FONT_SIZE) * 0.85}px;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+      margin-bottom: 4px;
+      line-height: 1.3;
+      opacity: 0.7;
+    `
+    originalSubtitle.textContent = originalText
+    container.appendChild(originalSubtitle)
+
+    const translatedSubtitle = document.createElement('div')
+    translatedSubtitle.className = 'translated-subtitle'
+    translatedSubtitle.style.cssText = `
+      color: ${items.translatedFontColor || CONFIG.DEFAULT_TRANSLATED_FONT_COLOR};
+      font-weight: ${items.translatedFontWeight || CONFIG.DEFAULT_FONT_WEIGHT};
+      font-size: ${items.translatedFontSize || CONFIG.DEFAULT_FONT_SIZE}px;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+      line-height: 1.4;
+      white-space: pre-wrap;
+    `
+    translatedSubtitle.textContent = partial
+    container.appendChild(translatedSubtitle)
+
+    if (this.subtitleTimeout !== null) {
+      clearTimeout(this.subtitleTimeout)
+    }
+    this.subtitleTimeout = window.setTimeout(() => {
+      if (this.floatingSubtitle) {
+        this.floatingSubtitle.style.display = 'none'
+      }
+      this.subtitleTimeout = null
+    }, 6000)
+  }
+
+  private handleTranslationError(text: string, rawError: string) {
+    const errorKey = `${text.slice(0, 60)}::${rawError.slice(0, 100)}`
+    const now = Date.now()
+    if (
+      this.lastErrorKey === errorKey &&
+      now - this.lastErrorTime < this.ERROR_THROTTLE_MS
+    ) {
+      return
+    }
+    this.lastErrorKey = errorKey
+    this.lastErrorTime = now
+
+    const userMessage = this.friendlyErrorMessage(rawError)
+    this.showTranslationError(text, userMessage)
   }
 
   private friendlyErrorMessage(raw: string): string {

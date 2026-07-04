@@ -1,4 +1,5 @@
 import { translateText } from '../../utils/request'
+import { streamTranslate, ModelConfig, ProviderType } from '../../utils/stream-translator'
 
 console.log('Background script initialized')
 
@@ -102,6 +103,105 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true // Indicates an asynchronous response
   }
 })
+
+// Streaming translation via persistent port
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'translate-stream') return
+  port.onMessage.addListener((request) => {
+    if (request.type === 'TRANSLATE_STREAM') {
+      handleStreamRequest(request, port)
+    }
+  })
+})
+
+const handleStreamRequest = async (request: any, port: chrome.runtime.Port) => {
+  const { text, requestId } = request
+  const abortController = new AbortController()
+
+  // Listen for client disconnect to abort
+  port.onDisconnect.addListener(() => {
+    abortController.abort()
+  })
+
+  try {
+    const storageData = await getStorageData()
+    if (!storageData.status) {
+      port.postMessage({ type: 'STREAM_ERROR', requestId, error: 'Translation disabled' })
+      return
+    }
+
+    const info = resolveProviderAndConfig(storageData)
+    if (!info) {
+      port.postMessage({ type: 'STREAM_ERROR', requestId, error: 'No valid configuration' })
+      return
+    }
+
+    await streamTranslate(
+      info.provider,
+      info.config,
+      text,
+      storageData.prompt || '',
+      {
+        onChunk: (chunk: string) => {
+          try {
+            port.postMessage({ type: 'STREAM_CHUNK', requestId, chunk })
+          } catch {
+            // port closed
+          }
+        },
+        onDone: (full: string) => {
+          try {
+            port.postMessage({ type: 'STREAM_DONE', requestId, fullText: full })
+          } catch {
+            // port closed
+          }
+        },
+        onError: (err: Error) => {
+          try {
+            port.postMessage({ type: 'STREAM_ERROR', requestId, error: err.message })
+          } catch {
+            // port closed
+          }
+        },
+      },
+      abortController.signal,
+    )
+  } catch (err: any) {
+    try {
+      port.postMessage({
+        type: 'STREAM_ERROR',
+        requestId,
+        error: err?.message || String(err),
+      })
+    } catch {
+      // port closed
+    }
+  }
+}
+
+function resolveProviderAndConfig(storageData: any): { provider: ProviderType; config: ModelConfig } | null {
+  let provider: ProviderType
+  let config: ModelConfig
+
+  if (storageData.selectedProvider && storageData.providerConfig) {
+    let raw = storageData.selectedProvider as string
+    if (raw === 'openai' || raw === 'zhipu') provider = 'openai-compatible'
+    else provider = raw as ProviderType
+    config = storageData.providerConfig
+  } else {
+    const selectedModel = storageData.selectedModel || 'openai'
+    if (selectedModel === 'openai' || selectedModel === 'zhipu') provider = 'openai-compatible'
+    else provider = selectedModel as ProviderType
+    if (selectedModel === 'ollama' && storageData.ollamaConfig) {
+      config = storageData.ollamaConfig
+    } else if (storageData.openaiConfig) {
+      config = storageData.openaiConfig
+    } else {
+      return null
+    }
+  }
+  return { provider, config }
+}
 
 const handleTranslationRequest = async (
   request: any,
