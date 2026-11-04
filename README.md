@@ -86,6 +86,13 @@ Base URL: `http://localhost:11434/v1` · Örnek model: `qwen2.5:3b`
 | Native host bulunamadı | Kurulumu tekrar çalıştır, tarayıcıyı tamamen kapat/aç |
 | CTranslate2 model uyuşmazlığı | Karttaki **Hazır modeller** listesinden doğru modeli seç |
 
+### Teşekkür
+
+Bu proje, Udemy altyazılarını çeviren
+[ChenYCL/chrome-extension-udemy-translate](https://github.com/ChenYCL/chrome-extension-udemy-translate)
+projesinden esinlenerek geliştirildi. Fikir ve ilk uygulama için o projeye
+teşekkürler.
+
 ---
 
 ## English
@@ -166,3 +173,10 @@ Base URL: `http://localhost:11434/v1` · Example model: `qwen2.5:3b`
 | Ollama 403 / CORS | Restart with `OLLAMA_ORIGINS` set |
 | Native host not found | Run the installer again, then fully restart the browser |
 | CTranslate2 model mismatch | Pick the right model under **Prepared models** in the setup card |
+
+### Credits
+
+This project was inspired by
+[ChenYCL/chrome-extension-udemy-translate](https://github.com/ChenYCL/chrome-extension-udemy-translate),
+a Chrome extension that translates Udemy subtitles. Thanks to that project for
+the idea and the initial implementation.
