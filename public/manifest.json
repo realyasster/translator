@@ -1,0 +1,71 @@
+{
+    "manifest_version": 3,
+    "name": "Universal Subtitle Translator",
+    "description": "Real-time subtitle translation for any website. OpenAI, Ollama, CTranslate2, Google Translate, DeepL.",
+    "version": "3.8.0",
+    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAm698Z3YFLxMLfVshy72fEckYkgj11CXBYjO2yM3DPPll+DpEtAdHWDv2ZRvUVS8FkJIDwjjjsSXYTs0WvHhgWBr2gfdIYbC8egUo3P4Zyvbx+enC3WXkJybCKlLQWqbn0x6KuAoitIGgTDxJWKF0ZaxTzKcYtfztrb3mrmMbGbcABq/T1z4mZSKQwt2XS4ZEi56f41L1yuoXM9+caR/c/znKf1Tn19UtrLUzaYlm4+AXDJYocMQ0rRPBIPueh7xDdQjOWVBpF0LnbLJW+22HJ+zA0QLjS773rpGXXs6bk53GVFgjcbxB5P0On7KdXzGh6YGC06I2xfXwh4+VXAg6jwIDAQAB",
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icon-16.png",
+            "32": "icon-32.png",
+            "48": "icon-48.png",
+            "128": "icon-128.png"
+        }
+    },
+    "icons": {
+        "16": "icon-16.png",
+        "32": "icon-32.png",
+        "48": "icon-48.png",
+        "128": "icon-128.png"
+    },
+    "devtools_page": "devtools.html",
+    "options_page": "options.html",
+    "permissions": [
+        "storage",
+        "activeTab",
+        "scripting",
+        "nativeMessaging"
+    ],
+    "host_permissions": [
+        "http://*/*",
+        "https://*/*",
+        "file:///*",
+        "https://translate.googleapis.com/*",
+        "https://api-free.deepl.com/*",
+        "https://api.deepl.com/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "http://*/*",
+                "https://*/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_end",
+            "all_frames": true
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "content.styles.scss",
+                "icon-128.png",
+                "icon-48.png"
+            ],
+            "matches": [
+                "http://*/*",
+                "https://*/*"
+            ]
+        }
+    ],
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; connect-src 'self' https://*.openai.com https://*.bigmodel.cn https://*.deepseek.com https://translate.googleapis.com https://* http://localhost:* http://127.0.0.1:*; object-src 'self'"
+    }
+}

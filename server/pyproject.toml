@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ct2-nllb-server"
+version = "0.1.0"
+description = "Local CTranslate2 NLLB translation server for Universal Subtitle Translator"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "ctranslate2==4.8.5",
+  "fastapi==0.162.0",
+  "huggingface-hub==0.36.0",
+  "sentencepiece==0.2.2",
+  "transformers==4.57.6",
+  "uvicorn==0.54.0",
+]
+
+[project.optional-dependencies]
+convert = [
+  # Conversion uses PyTorch. Serving does not import torch.
+  "hf-xet==1.8.0",
+  "torch==2.6.0",
+]
+native = [
+  "psutil==7.2.2",
+  "pyinstaller==6.22.3",
+]
+test = [
+  "httpx==0.28.1",
+  "psutil==7.2.2",
+  "pytest==8.4.1",
+]
+
+[project.scripts]
+ct2-nllb-server = "ct2_nllb_server.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

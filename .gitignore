@@ -1,0 +1,54 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+
+# misc
+.DS_Store
+.env.development.local
+.env.local
+.env.production.local
+.env.test.local
+.idea
+.pnp.js
+.vscode
+/.pnp
+/.claude/
+
+# production
+/build
+/server/build/
+/release
+
+# graphify knowledge graph outputs
+/graphify-out
+
+# testing
+/coverage
+/.vitest/
+.pytest_cache/
+pytest-of-*/
+/server/tests/.pytest-tmp/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# local CTranslate2 server environments and models
+/server/.venv/
+/server/models/
+/server/.cache/
+
+# logs
+debug.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local debug output
+/debug.log
+
+# temporary agent notes and handoffs
+/.temp_files/
+
+# generated demo thumbnails
+docs/demo/*.jpg
